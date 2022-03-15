@@ -1,0 +1,12 @@
+from,to
+Reversible,Iterable
+Collection,Sized
+Collection,Iterable
+Collection,Container
+Sequence,Reversible
+Sequence,Collection
+MutableSequence,Sequence
+Set,Collection
+MutableSet,Set
+Mapping,Collection
+MutableMapping,Mapping
