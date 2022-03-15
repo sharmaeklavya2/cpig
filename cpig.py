@@ -24,7 +24,14 @@ def csep_to_list(s):
 
 
 def cesep_to_dict(s):
-    return dict([kev.split('=') for kev in s.strip().split(',')]) if s is not None else None
+    if s:
+        entries = [kev.split('=', 1) for kev in (s or '').strip().split(',')]
+        for a in entries:
+            if len(a) == 1:
+                a.append('1')
+        return dict(entries)
+    else:
+        return {}
 
 
 def infer_format(fpath):
