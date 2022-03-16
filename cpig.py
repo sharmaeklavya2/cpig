@@ -121,8 +121,64 @@ def create_graph(rows, crows, cond):
     return PIG(vnames=vnames, edges=edges)
 
 
-def process_graph(G):
-    raise NotImplementedError("graph processing isn't implemented yet")
+def process_graph(G, tins_to_show):
+    n = len(G.vnames)
+
+    def tclose(adj, tadj):
+        for s in range(n):
+            visited = [False] * n
+
+            def visit(u):
+                if not visited[u]:
+                    visited[u] = True
+                    for v in adj[u]:
+                        visit(v)
+            visit(s)
+            for v in range(n):
+                if visited[v]:
+                    tadj[s].add(v)
+
+    adj = [set() for v in range(n)]
+    radj = [set() for v in range(n)]
+    tadj = [set() for v in range(n)]
+    tradj = [set() for v in range(n)]
+
+    for e in G.edges:
+        if e.tin == 1:
+            adj[e.s].add(e.t)
+            radj[e.t].add(e.s)
+    tclose(adj, tadj)
+    tclose(radj, tradj)
+
+    neg_edges = {}
+    for e in G.edges:
+        if e.tin == -1:
+            neg_edges[(e.s, e.t)] = e
+            if e.t in tadj[e.s]:
+                print('[error] neg edge ({s}, {t}) is invalid'.format(
+                    s=G.vnames[e.s], t=G.vnames[e.t]), file=sys.stderr)
+                return G
+    new_edges = [e for e in G.edges if e.tin == 1]
+
+    for e in G.edges:
+        if e.tin == -1:
+            for u in tadj[e.s]:
+                for v in tradj[e.t]:
+                    if u != v and (u, v) not in neg_edges:
+                        neg_edges[(u, v)] = PIGEdge(u, v, tin=-1,
+                            description='{s} !-> {t}, {s} -> {u}, {v} -> {t}'.format(
+                                s=G.vnames[e.s], t=G.vnames[e.t], u=G.vnames[u], v=G.vnames[v]))
+    for u in range(n):
+        for v in range(n):
+            if u == v or v in tadj[u]:
+                continue
+            elif (u, v) in neg_edges:
+                new_edges.append(neg_edges[(u, v)])
+            else:
+                new_edges.append(PIGEdge(u, v, tin=0, description=None))
+
+    final_edges = [e for e in new_edges if e.tin in tins_to_show]
+    return PIG(G.vnames, final_edges)
 
 
 def get_dot_line(u, v, options):
@@ -141,11 +197,12 @@ def get_dot(G):
         options = {}
         if e.tin == 0:
             options['style'] = 'dashed'
+            options['constraint'] = 'false'
         elif e.tin == -1:
             options['color'] = 'red'
             options['constraint'] = 'false'
-        if e.description:
-            options['label'] = json.dumps(e.description)
+        # if e.description:
+            # options['label'] = json.dumps(e.description)
         lines.append(get_dot_line(e.s, e.t, options))
     lines.append('}\n')
     return lines
@@ -194,6 +251,7 @@ def main():
     # processing
     parser.add_argument('--raw', action='store_true', default=False,
         help='output raw graph (without processing)')
+    parser.add_argument('--tins', help='comma-separated list of tins to show')
     parser.add_argument('--cond',
         help='comma-and-equals-separated dict of conditions to impose')
     args = parser.parse_args()
@@ -204,8 +262,18 @@ def main():
     else:
         crows = []
     G = create_graph(rows, crows, cesep_to_dict(args.cond))
+
+    if args.tins is None:
+        if args.ce is None:
+            tins_to_show = [1]
+        elif args.raw:
+            tins_to_show = [-1, 1]
+        else:
+            tins_to_show = [0, 1]
+    else:
+        tins_to_show = [int(x) for x in args.tins.strip().split(',')]
     if not args.raw:
-        G = process_graph(G)
+        G = process_graph(G, tins_to_show)
     present_output(G, args.output, args.format)
 
 
