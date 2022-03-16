@@ -74,6 +74,8 @@ class PIGEdge(NamedTuple):
 class PIG(NamedTuple):
     vnames: Sequence[str]
     edges: Sequence[PIGEdge]
+    cc: Optional[Sequence[int]]
+    cclist: Optional[Sequence[Sequence[int]]]
 
 
 def create_graph(rows, crows, cond):
@@ -118,7 +120,47 @@ def create_graph(rows, crows, cond):
             t = vname_to_index[row['to']]
             edge = PIGEdge(s=s, t=t, tin=tin, description=row.get('description'))
             edges.append(edge)
-    return PIG(vnames=vnames, edges=edges)
+    return PIG(vnames=vnames, edges=edges, cc=None, cclist=None)
+
+
+def get_SCC(G, adj, radj):
+    n = len(G.vnames)
+    fintime_order = []
+    visited = [False] * n
+
+    def visit1(u):
+        if not visited[u]:
+            visited[u] = True
+            for v in adj[u]:
+                if not visited[v]:
+                    visit1(v)
+            fintime_order.append(u)
+
+    for r in range(n):
+        if not visited[r]:
+            visit1(r)
+
+    visited = [False] * n
+    cc = [None] * n
+    cclist = []
+
+    def visit2(u, cci):
+        if not visited[u]:
+            visited[u] = True
+            cc[u] = cci
+            cclist[-1].append(u)
+            for v in radj[u]:
+                if not visited[v]:
+                    visit2(v, cci)
+
+    cci = 0
+    for r in reversed(fintime_order):
+        if not visited[r]:
+            cclist.append([])
+            visit2(r, cci)
+            cci += 1
+
+    return (cc, cclist)
 
 
 def process_graph(G, tins_to_show):
@@ -149,6 +191,14 @@ def process_graph(G, tins_to_show):
             radj[e.t].add(e.s)
     tclose(adj, tadj)
     tclose(radj, tradj)
+    cc, cclist = get_SCC(G, adj, radj)
+
+    """
+    print('connected components:', file=sys.stderr)
+    for U in cclist:
+        if len(U) >= 2:
+            print([G.vnames[v] for v in U], file=sys.stderr)
+    """
 
     neg_edges = {}
     for e in G.edges:
@@ -178,7 +228,7 @@ def process_graph(G, tins_to_show):
                 new_edges.append(PIGEdge(u, v, tin=0, description=None))
 
     final_edges = [e for e in new_edges if e.tin in tins_to_show]
-    return PIG(G.vnames, final_edges)
+    return PIG(G.vnames, final_edges, cc=cc, cclist=cclist)
 
 
 def get_dot_line(u, v, options):
@@ -191,8 +241,16 @@ def get_dot_line(u, v, options):
 
 def get_dot(G):
     lines = ['digraph G {']
-    for vi, vname in enumerate(G.vnames):
-        lines.append('v{} [label="{}"];'.format(vi, vname))
+    for i, U in enumerate(G.cclist):
+        if len(U) >= 2:
+            lines.append('subgraph cluster' + str(i) + ' {')
+            lines.append('color=black;')
+            for v in U:
+                lines.append('v{} [label="{}"];'.format(v, G.vnames[v]))
+            lines.append('}')
+        else:
+            for v in U:
+                lines.append('v{} [label="{}"];'.format(v, G.vnames[v]))
     for e in G.edges:
         options = {}
         if e.tin == 0:
